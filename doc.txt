@@ -1,0 +1,1123 @@
+API Key
+
+nNPcTZmSTMzF1kD0qvMDTqyMp
+
+API Key Secret
+
+ff8NlCGuudyv6DSGUlIw1ueGA4LUV7Fwzwd1KSVlnKGPt4NMpg
+
+
+Bearer Token
+AAAAAAAAAAAAAAAAAAAAAGBw4AEAAAAAZQfyv1LbObmjilfemM9iqdMPsDc%3D3T3wqatZm20bxLP8F7qCU2oM9fFo24vIsJoSJs64aOjltcoizw
+
+
+Access Token
+
+1043863301480943616-oJbBcunZ5NK6GUokCuwpol7x093B3K
+
+Access Token Secret
+
+aKAFsiKT1nISY3Q4WsGakN75XUMHvmXU1jddxe1EzFbna
+
+
+This will be **free**, **secure**, and designed to **auto-post threads twice daily**.
+
+---
+
+# 🚀 Complete Setup Guide: Cybersecurity Awareness Twitter Bot (Free, Hugging Face + GitHub Actions)
+
+---
+
+## 1. What you’ll achieve
+
+* A bot that posts **1 cybersecurity awareness thread every 12 hours** (2/day).
+* Each thread = **5 tweets** (cause, human mistakes, awareness, recommendations, call-to-action).
+* Tweets will have **hashtags** + **engagement line** (“Like, Share & Comment”).
+* Runs entirely on **GitHub Actions** (free tier).
+* Uses **Hugging Face Inference API** for text generation.
+* No paid VPS, no manual work.
+
+---
+
+## 2. Prerequisites
+
+1. A **GitHub account** (for hosting the repo + Actions).
+
+2. A **Twitter/X Developer account** (to post tweets).
+
+   * Create a project → App → Keys & tokens.
+   * Get these 4 values:
+
+     * `TWITTER_API_KEY` (API Key / Consumer Key)
+     * `TWITTER_API_SECRET` (API Secret / Consumer Secret)
+     * `TWITTER_ACCESS_TOKEN` (Access Token)
+     * `TWITTER_ACCESS_SECRET` (Access Token Secret)
+
+3. A **Hugging Face account** (for Inference API).
+
+   * Go to [HF Tokens](https://huggingface.co/settings/tokens).
+   * Click **New Token** → Select **Read** → Copy token (starts with `hf_...`).
+
+⚠️ **Never paste your token publicly.** Store it in GitHub Secrets.
+
+---
+
+## 3. Create a new GitHub repo
+
+1. Go to [GitHub → New Repository](https://github.com/new).
+2. Name it e.g. `cyber-awareness-bot`.
+3. Choose Public or Private.
+4. Clone it locally (optional) or just add files via the GitHub website.
+
+---
+
+## 4. Add files to your repo
+
+### A) `requirements.txt`
+
+```txt
+tweepy>=4.14.0
+requests>=2.31.0
+```
+
+---
+
+### B) `tweet_bot.py`
+
+```python
+#python
+import os
+import random
+import time
+import requests
+from typing import List
+import tweepy
+
+# ---------------------------
+# Read secrets
+# ---------------------------
+TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")
+TWITTER_API_SECRET = os.getenv("TWITTER_API_SECRET")
+TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
+TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET")
+
+HF_API_KEY = os.getenv("HF_API_KEY")
+HF_MODEL = os.getenv("HF_MODEL", "google/flan-t5-base")
+
+# ---------------------------
+# Init Twitter client
+# ---------------------------
+twitter = tweepy.Client(
+    consumer_key=TWITTER_API_KEY,
+    consumer_secret=TWITTER_API_SECRET,
+    access_token=TWITTER_ACCESS_TOKEN,
+    access_token_secret=TWITTER_ACCESS_SECRET,
+    wait_on_rate_limit=True,
+)
+
+# ---------------------------
+# Config
+# ---------------------------
+MAX_TWEET_LEN = 280
+
+TOPICS = [
+    "phishing awareness",
+    "ransomware basics for non-tech users",
+    "password hygiene and MFA",
+    "social engineering red flags",
+    "mobile banking safety",
+    "cloud account hardening for small teams",
+    "insider threats: human factors",
+    "safe software updates and patching",
+    "public Wi-Fi risks and VPN basics",
+    "data privacy and oversharing",
+]
+
+HASHTAG_BUCKETS = [
+    ["#CyberSecurity", "#InfoSec", "#DataPrivacy"],
+    ["#CyberAwareness", "#SecurityTips", "#OnlineSafety"],
+    ["#Phishing", "#Ransomware", "#Malware"],
+]
+
+CTA = "Was this useful? Like, Share & Comment to help others stay safe."
+
+# ---------------------------
+# Helpers
+# ---------------------------
+def clamp_tweet(text: str) -> str:
+    if len(text) <= MAX_TWEET_LEN:
+        return text.strip()
+    cut = text[:MAX_TWEET_LEN - 1]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return (cut + "…").strip()
+
+def pick_hashtags() -> str:
+    bucket = random.choice(HASHTAG_BUCKETS)
+    k = random.choice([2, 3])
+    return " ".join(random.sample(bucket, k))
+
+def build_prompt(topic: str) -> str:
+    return f"""
+Write a 5-part Twitter thread about "{topic}" for non-technical users.
+Rules:
+- Each tweet <= 280 characters.
+- Include causes, human mistakes, and clear tips.
+- End with: "{CTA}" and 2-3 hashtags.
+Output format: list tweets 1-5, each on its own line.
+"""
+
+def call_hf_inference(prompt: str) -> str:
+    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 400}}
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    if resp.status_code != 200:
+        raise RuntimeError(f"HF API error {resp.status_code}: {resp.text}")
+    data = resp.json()
+    if isinstance(data, list) and "generated_text" in data[0]:
+        return data[0]["generated_text"]
+    return str(data)
+
+def parse_thread_list(raw: str) -> List[str]:
+    lines = [ln.strip() for ln in raw.strip().splitlines() if ln.strip()]
+    tweets = []
+    for ln in lines:
+        if ln[0].isdigit():
+            ln = ln.lstrip("12345). -")
+        tweets.append(clamp_tweet(ln))
+    tweets = tweets[:5]
+    while len(tweets) < 5:
+        tweets.append("Cybersecurity awareness matters. Stay safe online.")
+    # Ensure hashtags in last tweet
+    last = tweets[-1]
+    ht = pick_hashtags()
+    if CTA not in last:
+        last = clamp_tweet(f"{last} {CTA}")
+    if len(last) + 1 + len(ht) <= MAX_TWEET_LEN:
+        last = f"{last} {ht}"
+    tweets[-1] = clamp_tweet(last)
+    return tweets
+
+def post_thread(tweets: List[str]) -> str:
+    first_id = None
+    parent_id = None
+    for text in tweets:
+        for attempt in range(3):
+            try:
+                if parent_id:
+                    res = twitter.create_tweet(text=text, in_reply_to_tweet_id=parent_id)
+                else:
+                    res = twitter.create_tweet(text=text)
+                tid = str(res.data["id"])
+                if first_id is None:
+                    first_id = tid
+                parent_id = tid
+                break
+            except Exception as e:
+                time.sleep(2 + attempt * 2)
+                if attempt == 2:
+                    raise e
+        time.sleep(2)
+    return first_id
+
+def main():
+    topic = random.choice(TOPICS)
+    prompt = build_prompt(topic)
+    raw = call_hf_inference(prompt)
+    tweets = parse_thread_list(raw)
+    first_id = post_thread(tweets)
+    print("Thread posted. First tweet ID:", first_id)
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### C) `.github/workflows/cron.yml`
+
+```yaml
+name: Cyber Awareness Thread Bot
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC (09:00 Lagos)
+    - cron: "0 20 * * *"  # 20:00 UTC (21:00 Lagos)
+  workflow_dispatch: {}
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run bot
+        env:
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_SECRET: ${{ secrets.TWITTER_ACCESS_SECRET }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+          HF_MODEL: ${{ secrets.HF_MODEL }}
+        run: python tweet_bot.py
+```
+
+---
+
+## 5. Add GitHub Secrets
+
+In your repo: **Settings → Secrets and variables → Actions → New repository secret**.
+
+Add the following:
+
+* `TWITTER_API_KEY`
+* `TWITTER_API_SECRET`
+* `TWITTER_ACCESS_TOKEN`
+* `TWITTER_ACCESS_SECRET`
+* `HF_API_KEY` (your Hugging Face token)
+* `HF_MODEL` (optional, default = `google/flan-t5-base`)
+
+---
+
+## 6. Test
+
+1. Commit and push all files.
+2. Go to **Actions tab** → select workflow → click **Run workflow**.
+3. Check logs. If successful → you’ll see a new cybersecurity thread on your Twitter account.
+
+---
+
+## 7. Automation
+
+* The workflow will now auto-run **twice daily** (09:00 and 21:00 Lagos time).
+* Each run picks a random topic → generates a thread → posts it as a reply chain.
+
+---
+
+## 8. Optional fallback
+
+If Hugging Face API fails (server timeout, quota issue), you can add a small list of pre-written cybersecurity tips so the bot *always* posts something. (I can extend the script for this if you’d like.)
+
+---
+
+✅ Done! You now have a **100% free cybersecurity awareness Twitter bot** that:
+
+* Posts **threads every 12 hours**.
+* Uses **Hugging Face API** (no OpenAI cost).
+* Runs on **GitHub Actions** (free tier).
+
+---
+
+
+
+
+
+
+Great ✅ let’s extend the guide to include a **fallback system** so your bot **never skips a scheduled post**, even if Hugging Face API is down, slow, or rate-limited.
+
+---
+
+# 🔒 Step 9. Add Fallback Cybersecurity Tips
+
+We’ll embed a small **offline list** of evergreen cybersecurity awareness tips.
+If the Hugging Face API fails, the bot will:
+
+1. Pick **one topic randomly** from the fallback list.
+2. Expand it into a simple 3–5 tweet thread.
+3. Post it instead.
+
+---
+
+## Updated `tweet_bot.py` (with fallback)
+
+Replace your current `tweet_bot.py` with this version:
+
+```python
+#python
+import os
+import random
+import time
+import requests
+from typing import List
+import tweepy
+
+# ---------------------------
+# Read secrets
+# ---------------------------
+TWITTER_API_KEY = os.getenv("TWITTER_API_KEY")
+TWITTER_API_SECRET = os.getenv("TWITTER_API_SECRET")
+TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
+TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET")
+
+HF_API_KEY = os.getenv("HF_API_KEY")
+HF_MODEL = os.getenv("HF_MODEL", "google/flan-t5-base")
+
+# ---------------------------
+# Init Twitter client
+# ---------------------------
+twitter = tweepy.Client(
+    consumer_key=TWITTER_API_KEY,
+    consumer_secret=TWITTER_API_SECRET,
+    access_token=TWITTER_ACCESS_TOKEN,
+    access_token_secret=TWITTER_ACCESS_SECRET,
+    wait_on_rate_limit=True,
+)
+
+# ---------------------------
+# Config
+# ---------------------------
+MAX_TWEET_LEN = 280
+
+TOPICS = [
+    "phishing awareness",
+    "ransomware basics for non-tech users",
+    "password hygiene and MFA",
+    "social engineering red flags",
+    "mobile banking safety",
+    "cloud account hardening for small teams",
+    "insider threats: human factors",
+    "safe software updates and patching",
+    "public Wi-Fi risks and VPN basics",
+    "data privacy and oversharing",
+]
+
+HASHTAG_BUCKETS = [
+    ["#CyberSecurity", "#InfoSec", "#DataPrivacy"],
+    ["#CyberAwareness", "#SecurityTips", "#OnlineSafety"],
+    ["#Phishing", "#Ransomware", "#Malware"],
+]
+
+CTA = "Was this useful? Like, Share & Comment to help others stay safe."
+
+# ---------------------------
+# Fallback tips (3–5 tweets each)
+# ---------------------------
+FALLBACK_THREADS = [
+    [
+        "Phishing is still the #1 way attackers trick people online.",
+        "Clues: urgent messages, misspelled addresses, strange links.",
+        "Tip: Never click suspicious links. Hover to preview first.",
+        "Enable MFA so stolen passwords are less useful.",
+        f"{CTA} #CyberAwareness #Phishing",
+    ],
+    [
+        "Ransomware locks your files until you pay. But prevention works.",
+        "Back up important data offline or in the cloud.",
+        "Avoid opening suspicious attachments, even from 'friends'.",
+        "Keep software updated to patch known flaws.",
+        f"{CTA} #CyberSecurity #Ransomware",
+    ],
+    [
+        "Strong passwords are not enough anymore.",
+        "Always enable multi-factor authentication (MFA).",
+        "It adds a layer even if your password leaks.",
+        "Think of MFA as your digital seatbelt.",
+        f"{CTA} #OnlineSafety #InfoSec",
+    ],
+    [
+        "Public Wi-Fi at cafes, airports, hotels may be unsafe.",
+        "Attackers can intercept traffic on open networks.",
+        "Avoid logging into sensitive accounts on free Wi-Fi.",
+        "Use a VPN if you must connect.",
+        f"{CTA} #CyberSecurity #DataPrivacy",
+    ],
+]
+
+# ---------------------------
+# Helpers
+# ---------------------------
+def clamp_tweet(text: str) -> str:
+    if len(text) <= MAX_TWEET_LEN:
+        return text.strip()
+    cut = text[:MAX_TWEET_LEN - 1]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return (cut + "…").strip()
+
+def pick_hashtags() -> str:
+    bucket = random.choice(HASHTAG_BUCKETS)
+    k = random.choice([2, 3])
+    return " ".join(random.sample(bucket, k))
+
+def build_prompt(topic: str) -> str:
+    return f"""
+Write a 5-part Twitter thread about "{topic}" for non-technical users.
+Rules:
+- Each tweet <= 280 characters.
+- Include causes, human mistakes, and clear tips.
+- End with: "{CTA}" and 2-3 hashtags.
+Output format: list tweets 1-5, each on its own line.
+"""
+
+def call_hf_inference(prompt: str) -> str:
+    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 400}}
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    if resp.status_code != 200:
+        raise RuntimeError(f"HF API error {resp.status_code}: {resp.text}")
+    data = resp.json()
+    if isinstance(data, list) and "generated_text" in data[0]:
+        return data[0]["generated_text"]
+    return str(data)
+
+def parse_thread_list(raw: str) -> List[str]:
+    lines = [ln.strip() for ln in raw.strip().splitlines() if ln.strip()]
+    tweets = []
+    for ln in lines:
+        if ln[0].isdigit():
+            ln = ln.lstrip("12345). -")
+        tweets.append(clamp_tweet(ln))
+    tweets = tweets[:5]
+    while len(tweets) < 5:
+        tweets.append("Cybersecurity awareness matters. Stay safe online.")
+    # Ensure hashtags in last tweet
+    last = tweets[-1]
+    ht = pick_hashtags()
+    if CTA not in last:
+        last = clamp_tweet(f"{last} {CTA}")
+    if len(last) + 1 + len(ht) <= MAX_TWEET_LEN:
+        last = f"{last} {ht}"
+    tweets[-1] = clamp_tweet(last)
+    return tweets
+
+def post_thread(tweets: List[str]) -> str:
+    first_id = None
+    parent_id = None
+    for text in tweets:
+        for attempt in range(3):
+            try:
+                if parent_id:
+                    res = twitter.create_tweet(text=text, in_reply_to_tweet_id=parent_id)
+                else:
+                    res = twitter.create_tweet(text=text)
+                tid = str(res.data["id"])
+                if first_id is None:
+                    first_id = tid
+                parent_id = tid
+                break
+            except Exception as e:
+                time.sleep(2 + attempt * 2)
+                if attempt == 2:
+                    raise e
+        time.sleep(2)
+    return first_id
+
+# ---------------------------
+# Main
+# ---------------------------
+def main():
+    topic = random.choice(TOPICS)
+    prompt = build_prompt(topic)
+
+    try:
+        raw = call_hf_inference(prompt)
+        tweets = parse_thread_list(raw)
+        print("Generated thread using Hugging Face API.")
+    except Exception as e:
+        print("⚠️ HF API failed, using fallback tips:", e)
+        tweets = random.choice(FALLBACK_THREADS)
+
+    first_id = post_thread(tweets)
+    print("Thread posted. First tweet ID:", first_id)
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## How it works now
+
+1. **Normal case**:
+
+   * Bot calls Hugging Face API → generates a 5-tweet thread → posts it.
+
+2. **If API fails** (timeout, quota, error):
+
+   * Bot picks a **pre-written thread** from `FALLBACK_THREADS`.
+   * Still posts a useful cybersecurity awareness thread.
+
+3. Ensures **no missed posts** — schedule always delivers.
+
+---
+
+## Example Fallback Thread Output
+
+```
+Phishing is still the #1 way attackers trick people online.  
+Clues: urgent messages, misspelled addresses, strange links.  
+Tip: Never click suspicious links. Hover to preview first.  
+Enable MFA so stolen passwords are less useful.  
+Was this useful? Like, Share & Comment to help others stay safe. #CyberAwareness #Phishing
+```
+
+---
+
+✅ With this fallback, your bot is now **bulletproof**:
+
+* **HF API works** → fresh AI-generated content.
+* **HF API fails** → fallback cybersecurity tips (still valuable).
+
+---
+
+
+
+
+
+
+
+Perfect ✅ let’s extend your bot with an **external fallback file** so you can easily update cybersecurity tips without touching the Python code.
+
+---
+
+# 🔒 Step 10. Store fallback tips in `fallback.json`
+
+### A) Create a file: `fallback.json`
+
+```json
+[
+  [
+    "Phishing is still the #1 way attackers trick people online.",
+    "Clues: urgent messages, misspelled addresses, strange links.",
+    "Tip: Never click suspicious links. Hover to preview first.",
+    "Enable MFA so stolen passwords are less useful.",
+    "Was this useful? Like, Share & Comment to help others stay safe. #CyberAwareness #Phishing"
+  ],
+  [
+    "Ransomware locks your files until you pay. But prevention works.",
+    "Back up important data offline or in the cloud.",
+    "Avoid opening suspicious attachments, even from 'friends'.",
+    "Keep software updated to patch known flaws.",
+    "Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #Ransomware"
+  ],
+  [
+    "Strong passwords are not enough anymore.",
+    "Always enable multi-factor authentication (MFA).",
+    "It adds a layer even if your password leaks.",
+    "Think of MFA as your digital seatbelt.",
+    "Was this useful? Like, Share & Comment to help others stay safe. #OnlineSafety #InfoSec"
+  ],
+  [
+    "Public Wi-Fi at cafes, airports, hotels may be unsafe.",
+    "Attackers can intercept traffic on open networks.",
+    "Avoid logging into sensitive accounts on free Wi-Fi.",
+    "Use a VPN if you must connect.",
+    "Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #DataPrivacy"
+  ]
+]
+```
+
+* Each thread is an **array of tweets** (strings).
+* Add as many as you want; bot will randomly pick one if Hugging Face API fails.
+
+---
+
+### B) Update `tweet_bot.py`
+
+Replace the fallback section in your code with this:
+
+```python
+import json
+
+# ---------------------------
+# Load Fallback tips from file
+# ---------------------------
+def load_fallback_threads(filename="fallback.json"):
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list) and all(isinstance(t, list) for t in data):
+            return data
+        else:
+            raise ValueError("Invalid fallback.json format")
+    except Exception as e:
+        print("⚠️ Failed to load fallback.json, using default tip:", e)
+        return [[
+            "Cybersecurity awareness matters.",
+            "Always double-check links before clicking.",
+            "Enable MFA to protect your accounts.",
+            "Keep your software updated.",
+            "Was this useful? Like, Share & Comment to help others stay safe. #CyberAwareness"
+        ]]
+```
+
+Then modify your **main function**:
+
+```python
+def main():
+    topic = random.choice(TOPICS)
+    prompt = build_prompt(topic)
+
+    fallback_threads = load_fallback_threads()
+
+    try:
+        raw = call_hf_inference(prompt)
+        tweets = parse_thread_list(raw)
+        print("✅ Generated thread using Hugging Face API.")
+    except Exception as e:
+        print("⚠️ HF API failed, using fallback tips:", e)
+        tweets = random.choice(fallback_threads)
+
+    first_id = post_thread(tweets)
+    print("Thread posted. First tweet ID:", first_id)
+```
+
+---
+
+### C) Update GitHub Actions workflow
+
+No change needed — but ensure `fallback.json` is committed to your repo so Actions can access it.
+
+---
+
+## ✅ Benefits of this approach
+
+* You can **edit fallback.json anytime** to add new tips.
+* No need to change Python code for new tips.
+* If HF API goes down → bot will still post from your JSON file.
+* JSON keeps content structured and version-controlled.
+
+---
+
+## Example Run (if HF fails)
+
+The bot will load `fallback.json`, pick one thread like:
+
+```
+Ransomware locks your files until you pay. But prevention works.  
+Back up important data offline or in the cloud.  
+Avoid opening suspicious attachments, even from 'friends'.  
+Keep software updated to patch known flaws.  
+Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #Ransomware
+```
+
+---
+
+
+
+
+
+
+Perfect ✅ that’s a smart move — you’ll get a **mix of fresh AI content** and **evergreen fallback tips**, while saving Hugging Face API calls.
+
+Here’s how we’ll adjust your bot:
+
+* **Morning post (08:00 UTC)** → Hugging Face AI–generated thread.
+* **Evening post (20:00 UTC)** → Fallback tip from `fallback.json`.
+* If Hugging Face fails in the morning → still fallback to `fallback.json`.
+* This way you get **one AI post + one curated tip per day**.
+
+---
+
+# 🔄 Step 11. Mixed AI + Fallback Posting
+
+### A) Update `.github/workflows/cron.yml`
+
+We’ll pass an environment variable to tell the bot which mode to use.
+
+```yaml
+name: Cyber Awareness Thread Bot
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC → AI-generated post
+    - cron: "0 20 * * *"  # 20:00 UTC → fallback post
+  workflow_dispatch: {}
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run bot (AI in morning, fallback in evening)
+        env:
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_SECRET: ${{ secrets.TWITTER_ACCESS_SECRET }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+          HF_MODEL: ${{ secrets.HF_MODEL }}
+          RUN_MODE: ${{ github.event.schedule }}
+        run: python tweet_bot.py
+```
+
+---
+
+### B) Update `tweet_bot.py`
+
+We’ll detect if we’re in **AI mode** or **Fallback mode**.
+
+```python
+import os, json, random, time, requests, tweepy
+from typing import List
+
+# ... (keep all previous config, helpers, clamp_tweet, pick_hashtags, etc.) ...
+
+def load_fallback_threads(filename="fallback.json"):
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list) and all(isinstance(t, list) for t in data):
+            return data
+        else:
+            raise ValueError("Invalid fallback.json format")
+    except Exception as e:
+        print("⚠️ Failed to load fallback.json, using default tip:", e)
+        return [[
+            "Cybersecurity awareness matters.",
+            "Always double-check links before clicking.",
+            "Enable MFA to protect your accounts.",
+            "Keep your software updated.",
+            "Was this useful? Like, Share & Comment to help others stay safe. #CyberAwareness"
+        ]]
+
+def main():
+    run_mode = os.getenv("RUN_MODE", "").strip()
+    fallback_threads = load_fallback_threads()
+
+    if run_mode == "0 20 * * *":   # Evening schedule = fallback only
+        tweets = random.choice(fallback_threads)
+        print("🌙 Evening post: Using fallback thread.")
+    else:  # Morning or manual run = AI
+        topic = random.choice(TOPICS)
+        prompt = build_prompt(topic)
+        try:
+            raw = call_hf_inference(prompt)
+            tweets = parse_thread_list(raw)
+            print("☀️ Morning post: AI-generated thread.")
+        except Exception as e:
+            print("⚠️ HF API failed, using fallback tips:", e)
+            tweets = random.choice(fallback_threads)
+
+    first_id = post_thread(tweets)
+    print("Thread posted. First tweet ID:", first_id)
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### C) How it runs
+
+* **08:00 UTC** → AI-generated (Hugging Face).
+
+  * If HF API fails → fallback thread instead.
+* **20:00 UTC** → Always fallback (from your `fallback.json`).
+* **Manual trigger** → Defaults to AI attempt.
+
+---
+
+### D) Example schedule
+
+* Morning:
+
+  ```
+  ☀️ Morning post: AI-generated thread.
+  ```
+
+  → posts a fresh Hugging Face thread.
+
+* Evening:
+
+  ```
+  🌙 Evening post: Using fallback thread.
+  ```
+
+  → posts a curated evergreen tip from `fallback.json`.
+
+
+
+
+
+
+
+Perfect ✅ let’s add a **logging system** so your bot remembers what it has already posted.
+This will:
+
+1. Save every thread (AI or fallback) into a file (`posted_log.json`).
+2. Prevent posting the same fallback thread too often.
+3. Give you a history of tweets for review.
+
+---
+
+# 🔒 Step 12. Add Logging System
+
+### A) Create `posted_log.json` (initial file)
+
+In your repo root, add:
+
+```json
+[]
+```
+
+This will store a list of posted threads over time.
+
+---
+
+### B) Update `tweet_bot.py`
+
+Add helper functions for logging and uniqueness:
+
+```python
+import os, json, random, time, requests, tweepy
+from typing import List, Dict, Any
+from datetime import datetime
+
+LOG_FILE = "posted_log.json"
+
+# ---------------------------
+# Load posted history
+# ---------------------------
+def load_log() -> List[Dict[str, Any]]:
+    if not os.path.exists(LOG_FILE):
+        return []
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_log(entry: Dict[str, Any]):
+    history = load_log()
+    history.append(entry)
+    with open(LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
+
+# ---------------------------
+# Pick fallback ensuring no repeats
+# ---------------------------
+def pick_fallback(fallback_threads: List[List[str]]) -> List[str]:
+    history = load_log()
+    used = {tuple(h["tweets"]) for h in history if h["source"] == "fallback"}
+
+    unused = [t for t in fallback_threads if tuple(t) not in used]
+
+    if unused:
+        chosen = random.choice(unused)
+    else:
+        # If all used, reset and pick randomly
+        chosen = random.choice(fallback_threads)
+    return chosen
+```
+
+---
+
+### C) Modify `main()` to log posts
+
+Replace your `main()` with:
+
+```python
+def main():
+    run_mode = os.getenv("RUN_MODE", "").strip()
+    fallback_threads = load_fallback_threads()
+
+    tweets = None
+    source = ""
+
+    if run_mode == "0 20 * * *":   # Evening = fallback only
+        tweets = pick_fallback(fallback_threads)
+        source = "fallback"
+        print("🌙 Evening post: Using fallback thread.")
+    else:  # Morning or manual run = AI attempt
+        topic = random.choice(TOPICS)
+        prompt = build_prompt(topic)
+        try:
+            raw = call_hf_inference(prompt)
+            tweets = parse_thread_list(raw)
+            source = "ai"
+            print("☀️ Morning post: AI-generated thread.")
+        except Exception as e:
+            print("⚠️ HF API failed, using fallback tips:", e)
+            tweets = pick_fallback(fallback_threads)
+            source = "fallback"
+
+    first_id = post_thread(tweets)
+    print("Thread posted. First tweet ID:", first_id)
+
+    # Log entry
+    log_entry = {
+        "time": datetime.utcnow().isoformat() + "Z",
+        "source": source,
+        "tweets": tweets,
+        "first_tweet_id": first_id
+    }
+    save_log(log_entry)
+```
+
+---
+
+### D) Update GitHub Actions Workflow
+
+We must **commit logs back to the repo** after each run. Add two steps in `.github/workflows/cron.yml` after the `Run bot` step:
+
+```yaml
+      - name: Commit log
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add posted_log.json
+          git commit -m "Update posted log [skip ci]" || echo "No changes to commit"
+          git push
+```
+
+---
+
+### E) Now your bot will
+
+* Save each posted thread into `posted_log.json`.
+* Avoid reusing the same fallback thread until all have been used once.
+* Keep a permanent history in GitHub (commits).
+
+---
+
+### Example `posted_log.json` after a few runs
+
+```json
+[
+  {
+    "time": "2025-09-12T08:00:03Z",
+    "source": "ai",
+    "tweets": [
+      "Cybercriminals are exploiting weak passwords...",
+      "Tip: Always enable MFA...",
+      "Educate your team...",
+      "Update software regularly...",
+      "Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #InfoSec"
+    ],
+    "first_tweet_id": "184782192837192"
+  },
+  {
+    "time": "2025-09-12T20:00:04Z",
+    "source": "fallback",
+    "tweets": [
+      "Public Wi-Fi at cafes, airports, hotels may be unsafe.",
+      "Attackers can intercept traffic...",
+      "Avoid logging into sensitive accounts...",
+      "Use a VPN if you must connect.",
+      "Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #DataPrivacy"
+    ],
+    "first_tweet_id": "184785444231273"
+  }
+]
+```
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+# 🔄 Step 14. Randomized WOEIDs (U.S. + Global)
+
+### A) Common WOEIDs you can use
+
+* `1` → Worldwide 🌍
+* `23424977` → United States 🇺🇸
+* `23424975` → United Kingdom 🇬🇧
+* `23424848` → Canada 🇨🇦
+* `23424936` → India 🇮🇳
+
+We’ll make the bot pick randomly at each run (with higher weight for **Worldwide + U.S.**).
+
+---
+
+### B) Update `tweet_bot.py`
+
+Add WOEID list + random picker:
+
+```python
+# ---------------------------
+# WOEIDs for trends
+# ---------------------------
+WOEIDS = [
+    (1, "Worldwide"),
+    (23424977, "United States"),
+    (23424975, "United Kingdom"),
+    (23424848, "Canada"),
+    (23424936, "India"),
+]
+
+def pick_woeid() -> int:
+    """Randomly pick a WOEID, bias toward US + Worldwide"""
+    weighted = [1, 1, 23424977, 23424977, 23424975, 23424848, 23424936]
+    choice = random.choice(weighted)
+    for w, name in WOEIDS:
+        if w == choice:
+            print(f"🌐 Fetching trends for {name}")
+    return choice
+```
+
+---
+
+### C) Modify `main()` to use random WOEID
+
+In your `main()` replace the trending fetch line with:
+
+```python
+    woeid = pick_woeid()
+    trending = get_trending_hashtags(twitter_v1, woeid=woeid, limit=5)
+```
+
+---
+
+### D) Example log output
+
+When the workflow runs, you’ll see in GitHub Actions logs:
+
+```
+🌐 Fetching trends for United States
+☀️ Morning post: AI-generated thread with trending hashtags.
+Thread posted. First tweet ID: 184799123712
+```
+
+---
+
+### E) Example final tweet
+
+```
+Phishing emails are getting harder to spot.  
+Look for urgency, fake links, and spelling mistakes.  
+Enable MFA to protect accounts.  
+Was this useful? Like, Share & Comment to help others stay safe.  
+#CyberSecurity #OnlineSafety #TrendingNow #NFL
+```
+
+(where `#NFL` came from U.S. trending hashtags that day).
+
+---
+
+
+
+
+
+
+
