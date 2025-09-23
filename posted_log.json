@@ -262,5 +262,17 @@
       "Was this useful? Like, Share & Comment to help others stay safe. #OnlineSafety #InfoSec"
     ],
     "first_tweet_id": "1970216893769490614"
+  },
+  {
+    "time": "2025-09-23T08:16:48.009974Z",
+    "source": "fallback",
+    "tweets": [
+      "Phishing is still the #1 way attackers trick people online.",
+      "Clues: urgent messages, misspelled addresses, strange links.",
+      "Tip: Never click suspicious links. Hover to preview first.",
+      "Enable MFA so stolen passwords are less useful.",
+      "Was this useful? Like, Share & Comment to help others stay safe. #CyberAwareness #Phishing"
+    ],
+    "first_tweet_id": "1970401905659830363"
   }
 ]
