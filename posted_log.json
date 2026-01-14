@@ -2506,5 +2506,17 @@
       "Was this useful? Like, Share & Comment to help others stay safe. #CyberAwareness #Phishing"
     ],
     "first_tweet_id": "2011166651941622255"
+  },
+  {
+    "time": "2026-01-14T08:20:26.707735Z",
+    "source": "fallback",
+    "tweets": [
+      "Public Wi-Fi at cafes, airports, hotels may be unsafe.",
+      "Attackers can intercept traffic on open networks.",
+      "Avoid logging into sensitive accounts on free Wi-Fi.",
+      "Use a VPN if you must connect.",
+      "Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #DataPrivacy"
+    ],
+    "first_tweet_id": "2011352651045462140"
   }
 ]
