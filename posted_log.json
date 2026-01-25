@@ -2746,5 +2746,17 @@
       "Was this useful? Like, Share & Comment to help others stay safe. #CyberSecurity #Ransomware"
     ],
     "first_tweet_id": "2015152878000779419"
+  },
+  {
+    "time": "2026-01-25T20:01:28.628286Z",
+    "source": "fallback",
+    "tweets": [
+      "Strong passwords are not enough anymore.",
+      "Always enable multi-factor authentication (MFA).",
+      "It adds a layer even if your password leaks.",
+      "Think of MFA as your digital seatbelt.",
+      "Was this useful? Like, Share & Comment to help others stay safe. #OnlineSafety #InfoSec"
+    ],
+    "first_tweet_id": "2015515338797117641"
   }
 ]
